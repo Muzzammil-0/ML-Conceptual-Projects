@@ -36,7 +36,7 @@ Instead of just training a model, this script acts as an experimental lab to und
 
 ---
 
-## 📈 Results Summary
+## Results Summary
 
 | Experiment | Accuracy | Takeaway |
 | :--- | :--- | :--- |
