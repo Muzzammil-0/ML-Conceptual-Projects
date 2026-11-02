@@ -1,46 +1,54 @@
-# Classifier & Ensemble — Trees to Stacking on Telco Churn
+# K-Nearest Neighbors (KNN) on the Sonar Dataset
 
-Progression from a single decision tree through bagged trees (Random Forest), boosted trees (XGBoost), and a stacked ensemble — on the Telco Customer Churn dataset.
+##  Project Overview
+This module explores the `KNeighborsClassifier` using the **Sonar dataset** (a classic binary classification problem). The objective is to predict whether an object is a **Mine (0)** or a **Rock (1)** based on 60 sonar frequency band energy measurements.
 
-## Dataset
-- `fetch_openml('telco-customer-churn', version=1)`
-- 7,032 rows × 30 raw features (categorical + numeric mix; ID dropped)
-- Target: binary Churn, imbalance ~27% positive
-- Preprocessing: `TotalCharges` coerced to numeric, nulls dropped, categoricals one-hot encoded (drop_first=True)
+Instead of just training a model, this script acts as an experimental lab to understand the **Curse of Dimensionality**, the impact of **Distance Metrics**, and the effect of **PCA (Principal Component Analysis)** on a distance-based algorithm.
 
-## Approach
-1. Stratified 80/20 split
-2. Decision Tree baseline — unpruned (max overfit) and depth-limited (variance-controlled); `max_depth` swept 1–20
-3. Random Forest — 300 trees, default feature subsampling
-4. XGBoost — 500 rounds, lr=0.05, early stopping on validation log-loss
-5. Stacking — RF + XGB + scaled Logistic Regression → Logistic Regression meta-learner, `cv=5` for out-of-fold meta-features
-6. Confusion matrices + per-class classification reports across all models
+##  Dataset Details
+*   **Source:** `sklearn.datasets.fetch_openml('sonar')`
+*   **Samples:** 208
+*   **Features:** 60 (numerical, continuous between 0.0 and 1.0)
+*   **Target Classes:** Mine (111), Rock (97) — *Slightly imbalanced, but stratified.*
 
-## Results
+---
 
-### Test accuracy
-| Model | Train | Test | Notes |
-|---|---|---|---|
-| Tree (unpruned, depth 24) | 0.9988 | 0.7264 | Pure memorization |
-| Tree (depth 5) | 0.8046 | 0.7811 | Bias-variance balanced |
-| Random Forest (300) | 0.9988 | 0.7868 | Variance cancels |
-| XGBoost (early stop @ 66) | 0.8284 | 0.7953 | Best single model |
-| **Stack (RF + XGB + LR)** | **0.8423** | **0.8010** | Best overall |
+##  Key Concepts Explored
 
-### Churn class performance (the class that matters)
-| Model | Churn Precision | Churn Recall | Churn F1 |
-|---|---|---|---|
-| Tree (depth 5) | 0.605 | 0.508 | 0.552 |
-| Random Forest | 0.625 | 0.495 | 0.552 |
-| XGBoost | 0.643 | 0.516 | 0.573 |
-| **Stack (RF + XGB + LR)** | **0.649** | **0.548** | **0.594** |
+### 1. The "No Scaling" Anomaly
+**Observation:** Raw accuracy and Scaled accuracy are identical (`0.7381`).
+**Why?** KNN is highly sensitive to feature scaling. However, the Sonar dataset features are already normalized (all between 0.0 and 1.0). Therefore, `StandardScaler` (which forces mean=0, variance=1) doesn't drastically alter the relative distances between points in this specific dataset. If the features had been measured in different units (e.g., frequency in Hz vs. energy in Joules), scaling would have been critical.
 
-## Key Observations
-- **Accuracy is a misleading metric here.** Dummy baseline (always predict "No Churn") scores ~0.73. Every model sits only 5–7 points above a classifier that does nothing. The metric that matters is **Churn recall** — every model misses ~45–50% of churners.
-- **Unpruned tree demonstrates overfitting cleanly:** train 0.9988 / test 0.7264. Constraining depth to 5 recovers ~5 test points.
-- **Bagging vs. boosting:** RF plateaus and never overfits (averaging cancels variance); XGBoost overfits without early stopping — best iteration at 66, well before the 500-round cap.
-- **Stacking gains are marginal (+0.6% over XGBoost).** RF and XGB are correlated tree-based learners sharing the same features. The tiny gain comes from LR contributing a different error profile — not from the meta-learner being clever.
-- **Scaling matters only for LR.** Trees split on rank order and ignore scale. The LR base learner and meta-learner were wrapped in `StandardScaler` pipelines to resolve convergence issues; this moved stack accuracy from 0.8003 → 0.8010.
+### 2. Distance Metrics Matter
+**Observation:** Manhattan and Cosine distance (`0.7619`) slightly outperform Euclidean distance (`0.7381`) on the raw 60D data.
+**Why?** In high-dimensional spaces (60D), the Euclidean distance suffers heavily from the **Curse of Dimensionality** (distances between all points begin to look the same). Manhattan distance (L1 norm) is often more robust in high dimensions because it doesn't square the differences. Cosine distance focuses on the *angle* (orientation) rather than the *magnitude* of the vector, which is highly effective for frequency data like sonar signals.
 
-## Stack
-scikit-learn · xgboost · numpy · pandas · matplotlib
+### 3. Bias-Variance Tradeoff (The k-Sweep)
+**Observation:** A plot is generated sweeping `k` from 1 to 30.
+**Why?** 
+*   **Low k (k=1):** High variance, low bias. It overfits to noise.
+*   **High k (k=30):** Low variance, high bias. It smooths out the decision boundary too much.
+*   The plot helps us visually identify the "sweet spot" where test accuracy peaks without overfitting.
+
+### 4. The Curse of Dimensionality & PCA
+**Observation:** PCA dramatically improves accuracy, peaking at **15 components (85.71% accuracy)** retaining 83.3% variance. 
+**Why?** KNN calculates the distance between a test point and *every* training point. With 60 dimensions, many of those dimensions are just noise. PCA projects the data into a lower-dimensional space, discarding the noise and retaining the core variance. By reducing from 60D to 15D, KNN becomes significantly more accurate and computationally efficient.
+
+---
+
+## 📈 Results Summary
+
+| Experiment | Accuracy | Takeaway |
+| :--- | :--- | :--- |
+| **Baseline (60D, k=5)** | 73.81% | Baseline performance. |
+| **Raw (Euclidean)** | 73.81% | Standard metric. |
+| **Raw (Manhattan)** | 76.19% | L1 norm handles high-dim noise better. |
+| **Raw (Cosine)** | 76.19% | Angle-based similarity works well here. |
+| **PCA to 15D (Euclidean)** | **85.71%** | 🏆 **Best Result.** Noise removal drastically boosts KNN. |
+| **PCA to 15D (Manhattan)** | 80.95% | Decreased after PCA. L1 norm prefers the raw noise. |
+| **PCA to 30D+** | 71.43% | Re-introducing noise hurts performance. |
+
+*(Note: Test accuracy fluctuates because the dataset is very small (208 samples) and we are using an 80/20 split. Results may vary slightly depending on `random_state`.)*
+
+---
+
